@@ -112,7 +112,6 @@ namespace Infrastructure.Data
                 .OnDelete(DeleteBehavior.NoAction);
 
 
-            //Table configuration
             modelBuilder.Entity<ApprovalRule>().ToTable("ApprovalRule");
             modelBuilder.Entity<ApprovalRule>().HasKey(s => s.Id);
             modelBuilder.Entity<ApprovalRule>().Property(s => s.Id).ValueGeneratedOnAdd();

@@ -8,11 +8,18 @@ namespace Application.DTOs;
 
 public class ProjectProposalDto
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
     public string Title { get; set; }
     public string Description { get; set; }
-    public int CreatedByUserId { get; set; }
+    public decimal EstimatedAmount { get; set; }
+    public int EstimatedDuration { get; set; }
+    public int Area { get; set; }
+    public string AreaName { get; set; }
+    public int Type { get; set; }
+    public string TypeName { get; set; }
+    public int Status { get; set; }
+    public string StatusName { get; set; }
+    public int CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }
-    public bool IsApproved { get; set; }
 }
 

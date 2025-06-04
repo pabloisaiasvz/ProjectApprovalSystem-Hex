@@ -1,27 +1,40 @@
-﻿using Infrastructure.Data;
-using Domain.Entities;
-using Microsoft.EntityFrameworkCore;
-
+﻿
+using Application.DTOs;
 using Application.Services;
+using Domain.Entities;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Presentation.ConsoleUI
 {
     public class ProjectApprovalManager
     {
-        private readonly ProjectApprovalDbContext _context;
-        private User _currentUser;
+        private readonly IUserQueries _userQueries;
+        private readonly IProjectProposalQueries _projectQueries;
+        private readonly IPendingApprovalQueries _pendingApprovalQueries;
+        private readonly ICatalogQueries _catalogQueries;
         private readonly IProjectApprovalService _approvalService;
 
-        public ProjectApprovalManager(ProjectApprovalDbContext context, IProjectApprovalService approvalService)
+        private UserDto _currentUser;
+
+        public ProjectApprovalManager(
+            IUserQueries userQueries,
+            IProjectProposalQueries projectQueries,
+            IPendingApprovalQueries pendingApprovalQueries,
+            ICatalogQueries catalogQueries,
+            IProjectApprovalService approvalService)
         {
-            _context = context;
+            _userQueries = userQueries;
+            _projectQueries = projectQueries;
+            _pendingApprovalQueries = pendingApprovalQueries;
+            _catalogQueries = catalogQueries;
             _approvalService = approvalService;
         }
 
-
-        public void Run()
+        public async Task RunAsync()
         {
-            SelectUser();
+            await SelectUserAsync();
 
             bool continuar = true;
             while (continuar)
@@ -32,16 +45,16 @@ namespace Presentation.ConsoleUI
                 switch (opcion)
                 {
                     case "1":
-                        CreateNewProject().GetAwaiter().GetResult();
+                        await CreateNewProjectAsync();
                         break;
                     case "2":
-                        ViewMyRequests();
+                        await ViewMyRequestsAsync();
                         break;
                     case "3":
-                        ReviewPendingRequests();
+                        await ReviewPendingRequestsAsync();
                         break;
                     case "4":
-                        SelectUser();
+                        await SelectUserAsync();
                         break;
                     case "5":
                         continuar = false;
@@ -59,16 +72,16 @@ namespace Presentation.ConsoleUI
             }
         }
 
-        private void SelectUser()
+        private async Task SelectUserAsync()
         {
             Console.Clear();
             Console.WriteLine("=== SELECCIÓN DE USUARIO ===");
 
-            var usuarios = _context.Users.ToList();
+            var usuarios = await _userQueries.GetAllUsersAsync();
+
             for (int i = 0; i < usuarios.Count; i++)
             {
-                var rolName = _context.ApproverRoles.FirstOrDefault(r => r.Id == usuarios[i].Role)?.Name ?? "Sin rol";
-                Console.WriteLine($"{i + 1}. {usuarios[i].Name} - {usuarios[i].Email} ({rolName})");
+                Console.WriteLine($"{i + 1}. {usuarios[i].Name} - {usuarios[i].Email} ({usuarios[i].RoleName})");
             }
 
             Console.Write("\nSeleccione un usuario (número): ");
@@ -82,13 +95,10 @@ namespace Presentation.ConsoleUI
                 Console.WriteLine("Selección inválida. Utilizando el primer usuario por defecto.");
                 _currentUser = usuarios.First();
             }
-            ShowMainMenu();
         }
 
         private void ShowMainMenu()
         {
-            var roleName = _currentUser?.Role.ToString() ?? "Sin rol";
-
             Console.Clear();
             Console.WriteLine($"=== SISTEMA DE APROBACIÓN DE PROYECTOS ===");
             Console.WriteLine($"Usuario actual: {_currentUser?.Name}");
@@ -101,7 +111,7 @@ namespace Presentation.ConsoleUI
             Console.Write("\nSeleccione una opción: ");
         }
 
-        private async Task CreateNewProject()
+        private async Task CreateNewProjectAsync()
         {
             Console.Clear();
             Console.WriteLine("=== CREAR NUEVO PROYECTO ===");
@@ -112,61 +122,16 @@ namespace Presentation.ConsoleUI
             Console.Write("Descripción del Proyecto: ");
             string description = Console.ReadLine() ?? "";
 
-            decimal estimatedAmount = 0;
-            bool montoValido = false;
-            while (!montoValido)
-            {
-                Console.Write("Monto Estimado del Proyecto (ej. 15000): ");
-                montoValido = decimal.TryParse(Console.ReadLine(), out estimatedAmount);
-                if (!montoValido)
-                    Console.WriteLine("Por favor, ingrese un valor numérico válido.");
-            }
+            decimal estimatedAmount = await GetValidDecimalInputAsync("Monto Estimado del Proyecto (ej. 15000): ");
+            int duration = await    GetValidIntInputAsync("Duración en Meses (ej. 6): ");
 
-            int duration = 0;
-            bool duracionValida = false;
-            while (!duracionValida)
-            {
-                Console.Write("Duración en Meses (ej. 6): ");
-                duracionValida = int.TryParse(Console.ReadLine(), out duration);
-                if (!duracionValida)
-                    Console.WriteLine("Por favor, ingrese un valor numérico válido.");
-            }
+            var areas = await _catalogQueries.GetAllAreasAsync();
+            int areaId = await SelectFromCatalogAsync("Áreas disponibles:",
+            areas.Select(a => (a.Id, a.Name)).ToList());
 
-            Console.WriteLine("\nÁreas disponibles:");
-            var areas = _context.Areas.ToList();
-            foreach (var area in areas)
-            {
-                Console.WriteLine($"{area.Id}. {area.Name}");
-            }
-
-            int areaId = 0;
-            bool areaValida = false;
-            while (!areaValida)
-            {
-                Console.Write("Seleccione el ID del Área: ");
-                areaValida = int.TryParse(Console.ReadLine(), out areaId);
-                areaValida = areaValida && areas.Any(a => a.Id == areaId);
-                if (!areaValida)
-                    Console.WriteLine("Por favor, seleccione un ID de área válido.");
-            }
-
-            Console.WriteLine("\nTipos de Proyecto disponibles:");
-            var tipos = _context.ProjectTypes.ToList();
-            foreach (var tipo in tipos)
-            {
-                Console.WriteLine($"{tipo.Id}. {tipo.Name}");
-            }
-
-            int projectTypeId = 0;
-            bool tipoValido = false;
-            while (!tipoValido)
-            {
-                Console.Write("Seleccione el ID del Tipo de Proyecto: ");
-                tipoValido = int.TryParse(Console.ReadLine(), out projectTypeId);
-                tipoValido = tipoValido && tipos.Any(t => t.Id == projectTypeId);
-                if (!tipoValido)
-                    Console.WriteLine("Por favor, seleccione un ID de tipo válido.");
-            }
+            var projectTypes = await _catalogQueries.GetAllProjectTypesAsync();
+            int projectTypeId = await SelectFromCatalogAsync("Tipos de Proyecto disponibles:",
+                 projectTypes.Select(pt => (pt.Id, pt.Name)).ToList());
 
             var projectId = await _approvalService.CreateProjectProposalAsync(title, description, estimatedAmount, duration, areaId, projectTypeId, _currentUser.Id);
 
@@ -176,17 +141,43 @@ namespace Presentation.ConsoleUI
                 Console.WriteLine("No se pudo crear el proyecto.");
         }
 
-        private void ViewMyRequests()
+        private async Task<int> GetValidIntInputAsync(string prompt)
+        {
+            int result;
+            Console.Write(prompt);
+            while (!int.TryParse(Console.ReadLine(), out result))
+            {
+                Console.WriteLine("Por favor, ingrese un número válido.");
+                Console.Write(prompt);
+            }
+            return result;
+        }
+
+        private async Task<int> SelectFromCatalogAsync(string prompt, List<(int Id, string Name)> items)
+        {
+            Console.WriteLine(prompt);
+            for (int i = 0; i < items.Count; i++)
+            {
+                Console.WriteLine($"{i + 1}. {items[i].Name}");
+            }
+            Console.Write("\nSeleccione una opción (número): ");
+            while (true)
+            {
+                if (int.TryParse(Console.ReadLine(), out int selection) && selection >= 1 && selection <= items.Count)
+                {
+                    return items[selection - 1].Id;
+                }
+                Console.WriteLine("Selección inválida. Intente nuevamente.");
+            }
+        }
+
+
+        private async Task ViewMyRequestsAsync()
         {
             Console.Clear();
             Console.WriteLine("=== MIS SOLICITUDES DE PROYECTO ===");
 
-            var proyectos = _context.ProjectProposals
-                .Where(p => p.CreatedBy == _currentUser.Id)
-                .Include(p => p.Areas)
-                .Include(p => p.ProjectType)
-                .OrderBy(p => p.CreatedAt)
-                .ToList();
+            var proyectos = await _projectQueries.GetProjectsByUserIdAsync(_currentUser.Id);
 
             if (!proyectos.Any())
             {
@@ -199,43 +190,23 @@ namespace Presentation.ConsoleUI
             Console.WriteLine("| # | Título | Monto | Área | Tipo | Estado |");
             Console.WriteLine("-----------------------------------------------------------------");
 
-            foreach (var item in proyectos.Select((value, index) => new { value, index }))
+            for (int i = 0; i < proyectos.Count; i++)
             {
-                var proyecto = item.value;
-                int i = item.index;
-
-                var steps = _context.ProjectApprovalSteps
-                    .Where(s => s.ProjectProposalId == proyecto.Id)
-                    .ToList();
-
-                string estado = "Pending";
-                if (steps.Any(s => s.Status == _context.ApprovalStatuses.First(a => a.Name == "Rejected").Id))
-                    estado = "Rejected";
-                else if (steps.All(s => s.Status == _context.ApprovalStatuses.First(a => a.Name == "Approved").Id))
-                    estado = "Approved";
-
-                var areaName = _context.Areas.FirstOrDefault(a => a.Id == proyecto.Area)?.Name ?? "N/A";
-                var typeName = _context.ProjectTypes.FirstOrDefault(t => t.Id == proyecto.Type)?.Name ?? "N/A";
-
-                Console.WriteLine($"| {i + 1} | {proyecto.Title.PadRight(15).Substring(0, 15)} | {proyecto.EstimatedAmount.ToString("C")} | {areaName.PadRight(5)} | {typeName.PadRight(5)} | {estado.PadRight(7)} |");
+                var proyecto = proyectos[i];
+                Console.WriteLine($"| {i + 1} | {proyecto.Title.PadRight(15).Substring(0, Math.Min(15, proyecto.Title.Length))} | {proyecto.EstimatedAmount:C} | {proyecto.AreaName.PadRight(5)} | {proyecto.TypeName.PadRight(5)} | {proyecto.Status.PadRight(7)} |");
             }
-
 
             Console.WriteLine("-----------------------------------------------------------------");
 
             Console.Write("\nIngrese el número del proyecto para ver los detalles (0 para volver): ");
-            string input = Console.ReadLine();
-
-            if (int.TryParse(input, out int index))
+            if (int.TryParse(Console.ReadLine(), out int index))
             {
                 if (index == 0)
-                {
                     return;
-                }
                 else if (index > 0 && index <= proyectos.Count)
                 {
                     var proyectoSeleccionado = proyectos[index - 1];
-                    ShowProjectDetails(proyectoSeleccionado.Id);
+                    await ShowProjectDetailsAsync(proyectoSeleccionado.Id);
                 }
                 else
                 {
@@ -246,13 +217,11 @@ namespace Presentation.ConsoleUI
             {
                 Console.WriteLine("Entrada no válida.");
             }
-
         }
 
-        private void ShowProjectDetails(Guid projectId)
+        private async Task ShowProjectDetailsAsync(Guid projectId)
         {
-            var proyecto = _context.ProjectProposals
-                .FirstOrDefault(p => p.Id == projectId);
+            var proyecto = await _projectQueries.GetProjectDetailsByIdAsync(projectId);
 
             if (proyecto == null)
             {
@@ -260,28 +229,20 @@ namespace Presentation.ConsoleUI
                 return;
             }
 
-            var areaName = _context.Areas.FirstOrDefault(a => a.Id == proyecto.Area)?.Name ?? "N/A";
-            var typeName = _context.ProjectTypes.FirstOrDefault(t => t.Id == proyecto.Type)?.Name ?? "N/A";
-            var statusName = _context.ApprovalStatuses.FirstOrDefault(s => s.Id == proyecto.Status)?.Name ?? "N/A";
-
             Console.Clear();
             Console.WriteLine($"=== DETALLES DEL PROYECTO: {proyecto.Title} ===");
             Console.WriteLine($"ID: {proyecto.Id}");
             Console.WriteLine($"Descripción: {proyecto.Description}");
             Console.WriteLine($"Monto Estimado: {proyecto.EstimatedAmount:C}");
             Console.WriteLine($"Duración Estimada: {proyecto.EstimatedDuration} meses");
-            Console.WriteLine($"Área: {areaName}");
-            Console.WriteLine($"Tipo: {typeName}");
-            Console.WriteLine($"Estado: {statusName}");
+            Console.WriteLine($"Área: {proyecto.AreaName}");
+            Console.WriteLine($"Tipo: {proyecto.TypeName}");
+            Console.WriteLine($"Estado: {proyecto.StatusName}");
             Console.WriteLine($"Fecha de Creación: {proyecto.CreatedAt}");
 
-            Console.WriteLine("\nPasos de Aprobación:");
-            var pasos = _context.ProjectApprovalSteps
-                .Include(s => s.ApproverRole)
-                .Where(s => s.ProjectProposalId == projectId)
-                .OrderBy(s => s.StepOrder)
-                .ToList();
+            var pasos = await _projectQueries.GetProjectApprovalStepsAsync(projectId);
 
+            Console.WriteLine("\nPasos de Aprobación:");
             if (!pasos.Any())
             {
                 Console.WriteLine("No hay pasos de aprobación definidos para este proyecto.");
@@ -294,39 +255,22 @@ namespace Presentation.ConsoleUI
 
             foreach (var paso in pasos)
             {
-                string approverRoleName = paso.ApproverRole?.Name ?? "N/A";
-
-                var stepStatusName = _context.ApprovalStatuses
-                    .FirstOrDefault(s => s.Id == paso.Status)?.Name ?? "N/A";
-
                 string approvedDate = paso.DecisionDate.HasValue ? paso.DecisionDate.Value.ToString("dd/MM/yyyy") : "Pendiente";
-
-                Console.WriteLine($"| {paso.StepOrder} | {approverRoleName.PadRight(15).Substring(0, 15)} | {stepStatusName.PadRight(10).Substring(0, 10)} | {approvedDate} |");
+                Console.WriteLine($"| {paso.StepOrder} | {paso.ApproverRoleName.PadRight(15).Substring(0, Math.Min(15, paso.ApproverRoleName.Length))} | {paso.StatusName.PadRight(10).Substring(0, Math.Min(10, paso.StatusName.Length))} | {approvedDate} |");
             }
             Console.WriteLine("------------------------------------------------------------");
         }
 
-
-        private void ReviewPendingRequests()
+        private async Task ReviewPendingRequestsAsync()
         {
             Console.Clear();
             Console.WriteLine("=== REVISAR SOLICITUDES PENDIENTES ===");
 
-            var pendingStatusId = _context.ApprovalStatuses
-                .FirstOrDefault(st => st.Name == "Pending")?.Id ?? -1;
+            var pendingApprovals = await _pendingApprovalQueries.GetPendingApprovalsByRoleAsync(_currentUser.Role);
 
-            var pendingSteps = _context.ProjectApprovalSteps
-                .Include(s => s.ProjectProposal)
-                .Include(s => s.ApproverRole)
-                .Where(s => s.ApproverRoleId == _currentUser.Role && s.Status == pendingStatusId)
-                .OrderBy(s => s.ProjectProposal.CreatedAt)
-                .ToList();
-
-            if (!pendingSteps.Any())
+            if (!pendingApprovals.Any())
             {
-                var roleName = _context.ApproverRoles
-                    .FirstOrDefault(r => r.Id == _currentUser.Role)?.Name ?? "N/A";
-                Console.WriteLine($"No hay solicitudes pendientes para su aprobación como {roleName}.");
+                Console.WriteLine($"No hay solicitudes pendientes para su aprobación como {_currentUser.RoleName}.");
                 return;
             }
 
@@ -335,23 +279,21 @@ namespace Presentation.ConsoleUI
             Console.WriteLine("| # | ID Proyecto | Título          | Monto    | Paso | Rol Aprobador |");
             Console.WriteLine("------------------------------------------------------------------");
 
-            for (int i = 0; i < pendingSteps.Count; i++)
+            for (int i = 0; i < pendingApprovals.Count; i++)
             {
-                var step = pendingSteps[i];
-                string projectId = step.ProjectProposalId.ToString().Substring(0, 8) + "...";
-                string title = (step.ProjectProposal?.Title ?? "N/A").PadRight(15).Substring(0, 15);
-                string amount = step.ProjectProposal?.EstimatedAmount.ToString("C") ?? "N/A";
-                string approverRole = step.ApproverRole?.Name ?? "N/A";
+                var approval = pendingApprovals[i];
+                string projectId = approval.ProjectProposalId.ToString().Substring(0, 8) + "...";
+                string title = approval.ProjectTitle.PadRight(15).Substring(0, Math.Min(15, approval.ProjectTitle.Length));
 
-                Console.WriteLine($"| {i + 1} | {projectId} | {title} | {amount} | {step.StepOrder} | {approverRole} |");
+                Console.WriteLine($"| {i + 1} | {projectId} | {title} | {approval.EstimatedAmount:C} | {approval.StepOrder} | {approval.ApproverRoleName} |");
             }
             Console.WriteLine("------------------------------------------------------------------");
 
             Console.Write("\nSeleccione el número de la solicitud a revisar (0 para salir): ");
-            if (int.TryParse(Console.ReadLine(), out int seleccion) && seleccion > 0 && seleccion <= pendingSteps.Count)
+            if (int.TryParse(Console.ReadLine(), out int seleccion) && seleccion > 0 && seleccion <= pendingApprovals.Count)
             {
-                var selectedStep = pendingSteps[seleccion - 1];
-                ReviewRequestAsync(selectedStep, _currentUser.Id);
+                var selectedApproval = pendingApprovals[seleccion - 1];
+                await ReviewRequestAsync(selectedApproval);
             }
             else if (seleccion != 0)
             {
@@ -359,14 +301,12 @@ namespace Presentation.ConsoleUI
             }
         }
 
-
-        private async Task ReviewRequestAsync(ProjectApprovalStep step, int userId)
+        private async Task ReviewRequestAsync(PendingApprovalDto pendingApproval)
         {
-            var projectId = step.ProjectProposalId;
-            ShowProjectDetails(projectId);
+            await ShowProjectDetailsAsync(pendingApproval.ProjectProposalId);
 
             Console.WriteLine("\n=== REVISAR SOLICITUD ===");
-            Console.WriteLine($"Está revisando el paso {step.StepOrder} como {step.ApproverRole?.Name}");
+            Console.WriteLine($"Está revisando el paso {pendingApproval.StepOrder} como {pendingApproval.ApproverRoleName}");
             Console.WriteLine("1. Aprobar");
             Console.WriteLine("2. Rechazar");
             Console.WriteLine("3. Volver");
@@ -382,7 +322,7 @@ namespace Presentation.ConsoleUI
                     string observaciones = Console.ReadLine() ?? "";
 
                     bool aprobado = opcion == "1";
-                    await _approvalService.ProcessApprovalAsync(projectId, aprobado, step.StepOrder, userId, observaciones);
+                    await _approvalService.ProcessApprovalAsync(pendingApproval.ProjectProposalId, aprobado, pendingApproval.StepOrder, _currentUser.Id, observaciones);
 
                     Console.WriteLine(aprobado ? "Solicitud aprobada correctamente." : "Solicitud rechazada.");
                     break;
@@ -392,6 +332,20 @@ namespace Presentation.ConsoleUI
                     Console.WriteLine("Opción no válida.");
                     break;
             }
+        }
+
+        private async Task<decimal> GetValidDecimalInputAsync(string prompt)
+        {
+            decimal result = 0;
+            bool isValid = false;
+            while (!isValid)
+            {
+                Console.Write(prompt);
+                isValid = decimal.TryParse(Console.ReadLine(), out result);
+                if (!isValid)
+                    Console.WriteLine("Por favor, ingrese un valor numérico válido.");
+            }
+            return result;
         }
     }
 }

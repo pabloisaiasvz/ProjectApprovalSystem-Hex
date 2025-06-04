@@ -5,8 +5,7 @@
         public long Id { get; set; }
 
         public decimal MinAmount { get; set; }
-        public decimal MaxAmount { get; set; }
-= 0;
+        public decimal MaxAmount { get; set; } = 0;
         public int? Area { get; set; }
         public Area? Areas { get; set; }
 

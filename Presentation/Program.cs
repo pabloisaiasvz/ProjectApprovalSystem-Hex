@@ -4,12 +4,14 @@ using Infrastructure.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Application.Services;
+using Infrastructure.Persistence;
+using Infrastructure.Queries;
 
 namespace Presentation
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             Console.WriteLine("=============================================");
             Console.WriteLine("  SISTEMA DE APROBACIÓN DE PROYECTOS");
@@ -31,16 +33,29 @@ namespace Presentation
                 {
                     context.Database.EnsureCreated();
 
+                    var userQueries = new UserQueries(context);
+                    var projectProposalQueries = new ProjectProposalQueries(context);
+                    var pendingApprovalQueries = new PendingApprovalQueries(context);
+                    var catalogQueries = new CatalogQueries(context);
+
                     var proposalRepo = new ProjectProposalRepository(context);
                     var statusRepo = new ApprovalStatusRepository(context);
                     var ruleRepo = new ApprovalRuleRepository(context);
                     var stepRepo = new ProjectApprovalStepRepository(context);
                     var roleRepo = new ApproverRoleRepository(context);
+                    var unitOfWork = new UnitOfWork(context);
 
-                    var approvalService = new ProjectApprovalService(proposalRepo, statusRepo, ruleRepo, stepRepo, roleRepo);
+                    var approvalService = new ProjectApprovalService(
+                        proposalRepo, statusRepo, ruleRepo, stepRepo, roleRepo, unitOfWork);
 
-                    var manager = new ProjectApprovalManager(context, approvalService);
-                    manager.Run();
+                    var manager = new ProjectApprovalManager(
+                        userQueries,
+                        projectProposalQueries,
+                        pendingApprovalQueries,
+                        catalogQueries,
+                        approvalService);
+
+                    await manager.RunAsync();
                 }
             }
             catch (Exception ex)
