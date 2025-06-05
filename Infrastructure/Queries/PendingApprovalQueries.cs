@@ -2,9 +2,7 @@
 using Application.Services;
 using Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+
 
 namespace Infrastructure.Queries
 {
@@ -19,18 +17,18 @@ namespace Infrastructure.Queries
 
         public async Task<List<PendingApprovalDto>> GetPendingApprovalsByRoleAsync(int roleId)
         {
-            var pendingStatusId = await _context.ApprovalStatuses
-                .Where(st => st.Name == "Pending")
+            var pendingStatusIds = await _context.ApprovalStatuses
+                .Where(st => st.Name == "Pending" || st.Name == "Observed")
                 .Select(st => st.Id)
-                .FirstOrDefaultAsync();
+                .ToListAsync();
 
-            if (pendingStatusId == 0)
+            if (pendingStatusIds == null || pendingStatusIds.Count == 0)
                 return new List<PendingApprovalDto>();
 
             return await _context.ProjectApprovalSteps
                 .Include(s => s.ProjectProposal)
                 .Include(s => s.ApproverRole)
-                .Where(s => s.ApproverRoleId == roleId && s.Status == pendingStatusId)
+                .Where(s => s.ApproverRoleId == roleId && pendingStatusIds.Contains(s.Status))
                 .OrderBy(s => s.ProjectProposal.CreatedAt)
                 .Select(s => new PendingApprovalDto
                 {

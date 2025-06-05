@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Domain.Interfaces;
 using Domain.Entities;
+using Application.Exceptions;
 
 namespace Application.Services
 {
@@ -48,7 +49,7 @@ namespace Application.Services
                     .All(s => s.Status == statusApproved.Id);
 
                 if (!previousStepsApproved)
-                    throw new Exception("No se puede aprobar este paso hasta que los pasos anteriores estén aprobados.");
+                    throw new BusinessRuleException("No se puede aprobar este paso hasta que los pasos anteriores estén aprobados.");
 
                 currentStep.ApproverUserId = userId;
                 currentStep.Observations = observations;
@@ -81,6 +82,38 @@ namespace Application.Services
                 throw;
             }
         }
+
+
+        public async Task<List<ProjectProposal>> GetProposalsByStatusNameAsync(string statusName)
+        {
+            var status = await _statusRepo.GetByNameAsync(statusName)
+                ?? throw new Exception($"Estado '{statusName}' no encontrado.");
+
+            var allProposals = await _proposalRepo.GetAllAsync();
+            return allProposals.Where(p => p.Status == status.Id).ToList();
+        }
+
+        public async Task MarkAsObservedAsync(Guid projectId)
+        {
+            var proposal = await _proposalRepo.GetByIdAsync(projectId)
+                ?? throw new Exception("Proyecto no encontrado.");
+
+            proposal.Status = 4;
+            await _proposalRepo.UpdateAsync(proposal);
+
+            var steps = await _stepRepo.GetByProposalIdAsync(projectId);
+
+            foreach (var step in steps)
+            {
+                if (step.Status == 3)
+                {
+                    step.Status = 4;
+                    await _stepRepo.UpdateAsync(step);
+                }
+            }
+        }
+
+
     }
 }
 

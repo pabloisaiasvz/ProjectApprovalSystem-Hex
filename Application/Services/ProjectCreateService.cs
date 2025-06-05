@@ -6,7 +6,7 @@ using Domain.Entities;
 
 namespace Application.Services
 {
-    public class ProjectApprovalService : IProjectApprovalService
+    public class ProjectCreateService : IProjectCreateService
     {
         private readonly IProjectProposalRepository _proposalRepo;
         private readonly IApprovalStatusRepository _statusRepo;
@@ -16,7 +16,7 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
 
 
-        public ProjectApprovalService(
+        public ProjectCreateService(
             IProjectProposalRepository proposalRepo,
             IApprovalStatusRepository statusRepo,
             IApprovalRuleRepository ruleRepo,
@@ -63,7 +63,7 @@ namespace Application.Services
                 await _proposalRepo.AddAsync(projectProposal);
 
                 var allRules = (await _ruleRepo.GetRulesAsync(estimatedAmount, areaId, projectTypeId)).ToList();
-                var rules = GetMostSpecificRules(allRules);
+                var rules = GetMostSpecificUniqueRules(allRules);
 
                 if (!rules.Any())
                 {
@@ -72,6 +72,7 @@ namespace Application.Services
                 }
 
                 var orderedRules = rules.OrderBy(r => r.StepOrder).ToList();
+
                 for (int i = 0; i < orderedRules.Count; i++)
                 {
                     var rule = orderedRules[i];
@@ -98,89 +99,58 @@ namespace Application.Services
             }
         }
 
-        public async Task ProcessApprovalAsync(Guid projectId, bool isApproved, int stepOrder, int userId, string? observations = null)
+
+
+        private static List<ApprovalRule> GetMostSpecificUniqueRules(List<ApprovalRule> applicableRules)
         {
-            await _unitOfWork.BeginTransactionAsync();
-            try
+            var result = new List<ApprovalRule>();
+
+            var groupedByStep = applicableRules.GroupBy(r => r.StepOrder);
+
+            foreach (var stepGroup in groupedByStep)
             {
-                var projectProposal = await _proposalRepo.GetByIdAsync(projectId);
-                if (projectProposal == null) throw new Exception("Proyecto no encontrado.");
+                var mostSpecific = stepGroup
+                    .OrderByDescending(rule => CalculateSpecificity(rule))
+                    .ThenBy(rule => rule.Id)
+                    .First();
 
-                var currentStep = await _stepRepo.GetByProposalIdAndStepOrderAsync(projectId, stepOrder);
-                if (currentStep == null) throw new Exception("Paso de aprobación no encontrado.");
-
-                var statusApproved = await _statusRepo.GetByNameAsync("Approved");
-                var statusRejected = await _statusRepo.GetByNameAsync("Rejected");
-                if (statusApproved == null || statusRejected == null) throw new Exception("Estados 'Approved' o 'Rejected' no encontrados.");
-
-                var allSteps = (await _stepRepo.GetByProposalIdAsync(projectId)).ToList();
-                bool previousStepsApproved = allSteps
-                    .Where(s => s.StepOrder < stepOrder)
-                    .All(s => s.Status == statusApproved.Id);
-
-                if (!previousStepsApproved)
-                    throw new Exception("No se puede aprobar este paso hasta que los pasos anteriores estén aprobados.");
-
-                currentStep.ApproverUserId = userId;
-                currentStep.Observations = observations;
-                currentStep.DecisionDate = DateTime.Now;
-                currentStep.Status = isApproved ? statusApproved.Id : statusRejected.Id;
-
-                await _stepRepo.UpdateAsync(currentStep);
-
-                if (!isApproved)
-                {
-                    projectProposal.Status = statusRejected.Id;
-                    await _proposalRepo.UpdateAsync(projectProposal);
-                    await _unitOfWork.CommitAsync();
-                    return;
-                }
-
-                bool allApproved = allSteps.All(s => s.StepOrder <= stepOrder ? s.Status == statusApproved.Id : true);
-
-                if (allApproved)
-                {
-                    projectProposal.Status = statusApproved.Id;
-                    await _proposalRepo.UpdateAsync(projectProposal);
-                }
-
-                await _unitOfWork.CommitAsync();
+                result.Add(mostSpecific);
             }
-            catch
+
+            var finalResult = new List<ApprovalRule>();
+            var groupedByRole = result.GroupBy(r => r.ApproverRoleId);
+
+            foreach (var roleGroup in groupedByRole)
             {
-                await _unitOfWork.RollbackAsync();
-                throw;
+                if (roleGroup.Count() == 1)
+                {
+                    finalResult.Add(roleGroup.First());
+                }
+                else
+                {
+                    var mostSpecificForRole = roleGroup
+                        .OrderByDescending(r => CalculateSpecificity(r))
+                        .ThenBy(r => r.StepOrder)
+                        .First();
+
+                    finalResult.Add(mostSpecificForRole);
+                }
             }
+
+            return finalResult.OrderBy(r => r.StepOrder).ToList();
         }
 
-        public async Task UpdateProjectStatusAsync(Guid projectId, int statusId)
+        private static int CalculateSpecificity(ApprovalRule rule)
         {
-            var projectProposal = await _proposalRepo.GetByIdAsync(projectId);
-            if (projectProposal == null) throw new Exception("Proyecto no encontrado.");
+            int specificity = 0;
 
-            var status = await _statusRepo.GetByIdAsync(statusId);
-            if (status == null) throw new Exception("Estado no válido.");
+            if (rule.Area.HasValue) specificity++;
+            if (rule.Type.HasValue) specificity++;
+            if (rule.MinAmount > 0) specificity++;
+            if (rule.MaxAmount > 0) specificity++;
 
-            projectProposal.Status = status.Id;
-            projectProposal.ApprovalStatus = status;
-
-            await _proposalRepo.UpdateAsync(projectProposal);
+            return specificity;
         }
-
-
-        private static List<ApprovalRule> GetMostSpecificRules(List<ApprovalRule> rules)
-        {
-            return rules
-                .GroupBy(r => r.StepOrder)
-                .Select(g =>
-                    g.OrderByDescending(r =>
-                        (r.Area.HasValue ? 1 : 0) +
-                        (r.Type.HasValue ? 1 : 0) +
-                        (r.MinAmount > 0 ? 1 : 0) +
-                        (r.MaxAmount > 0 ? 1 : 0)
-                    ).First()
-                ).ToList();
-        }
-
     }
 }
+

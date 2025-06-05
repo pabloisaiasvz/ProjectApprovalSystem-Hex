@@ -45,15 +45,22 @@ namespace Presentation
                     var roleRepo = new ApproverRoleRepository(context);
                     var unitOfWork = new UnitOfWork(context);
 
-                    var approvalService = new ProjectApprovalService(
+                    var createService = new ProjectCreateService(
                         proposalRepo, statusRepo, ruleRepo, stepRepo, roleRepo, unitOfWork);
+
+                    var approvalService = new ProjectApprovalProcessorService(
+                        proposalRepo, statusRepo, stepRepo, unitOfWork);
+
+
 
                     var manager = new ProjectApprovalManager(
                         userQueries,
                         projectProposalQueries,
                         pendingApprovalQueries,
                         catalogQueries,
-                        approvalService);
+                        createService,
+                        approvalService
+                    );
 
                     await manager.RunAsync();
                 }

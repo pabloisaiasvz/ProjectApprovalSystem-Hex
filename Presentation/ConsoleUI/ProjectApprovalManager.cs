@@ -14,7 +14,8 @@ namespace Presentation.ConsoleUI
         private readonly IProjectProposalQueries _projectQueries;
         private readonly IPendingApprovalQueries _pendingApprovalQueries;
         private readonly ICatalogQueries _catalogQueries;
-        private readonly IProjectApprovalService _approvalService;
+        private readonly ProjectCreateService _createService;
+        private readonly ProjectApprovalProcessorService _approvalService;
 
         private UserDto _currentUser;
 
@@ -23,12 +24,14 @@ namespace Presentation.ConsoleUI
             IProjectProposalQueries projectQueries,
             IPendingApprovalQueries pendingApprovalQueries,
             ICatalogQueries catalogQueries,
-            IProjectApprovalService approvalService)
+            ProjectCreateService createService,
+            ProjectApprovalProcessorService approvalService)
         {
             _userQueries = userQueries;
             _projectQueries = projectQueries;
             _pendingApprovalQueries = pendingApprovalQueries;
             _catalogQueries = catalogQueries;
+            _createService = createService;
             _approvalService = approvalService;
         }
 
@@ -42,31 +45,40 @@ namespace Presentation.ConsoleUI
                 ShowMainMenu();
                 string opcion = Console.ReadLine() ?? "";
 
-                switch (opcion)
+                try
                 {
-                    case "1":
-                        await CreateNewProjectAsync();
-                        break;
-                    case "2":
-                        await ViewMyRequestsAsync();
-                        break;
-                    case "3":
-                        await ReviewPendingRequestsAsync();
-                        break;
-                    case "4":
-                        await SelectUserAsync();
-                        break;
-                    case "5":
-                        continuar = false;
-                        break;
-                    default:
-                        Console.WriteLine("Opción no válida. Intente nuevamente.");
-                        break;
+                    switch (opcion)
+                    {
+                        case "1":
+                            await CreateNewProjectAsync();
+                            break;
+                        case "2":
+                            await ViewMyRequestsAsync();
+                            break;
+                        case "3":
+                            await ReviewPendingRequestsAsync();
+                            break;
+                        case "4":
+                            await ReviewRejectedProjectsAsync();
+                            break;
+                        case "5":
+                            await SelectUserAsync();
+                            break;
+                        case "6":
+                            continuar = false;
+                            break;
+                        default:
+                            Console.WriteLine("Opción no válida. Intente nuevamente.");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error: {ex.Message}");
                 }
 
                 if (continuar)
                 {
-                    Console.WriteLine("\nPresione cualquier tecla para continuar...");
                     Console.ReadKey();
                 }
             }
@@ -106,8 +118,10 @@ namespace Presentation.ConsoleUI
             Console.WriteLine("1. Crear un proyecto nuevo");
             Console.WriteLine("2. Ver el estado de mis solicitudes de proyecto");
             Console.WriteLine("3. Revisar solicitudes de proyecto pendientes");
-            Console.WriteLine("4. Cambiar de Usuario");
-            Console.WriteLine("5. Salir de la aplicación");
+            Console.WriteLine("4. Revisar proyectos rechazados");
+            Console.WriteLine("5. Cambiar de Usuario");
+            Console.WriteLine("6. Salir de la aplicación");
+
             Console.Write("\nSeleccione una opción: ");
         }
 
@@ -133,7 +147,7 @@ namespace Presentation.ConsoleUI
             int projectTypeId = await SelectFromCatalogAsync("Tipos de Proyecto disponibles:",
                  projectTypes.Select(pt => (pt.Id, pt.Name)).ToList());
 
-            var projectId = await _approvalService.CreateProjectProposalAsync(title, description, estimatedAmount, duration, areaId, projectTypeId, _currentUser.Id);
+            var projectId = await _createService.CreateProjectProposalAsync(title, description, estimatedAmount, duration, areaId, projectTypeId, _currentUser.Id);
 
             if (projectId != null)
                 Console.WriteLine($"Proyecto creado con éxito. ID: {projectId}");
@@ -347,5 +361,32 @@ namespace Presentation.ConsoleUI
             }
             return result;
         }
+
+        private async Task ReviewRejectedProjectsAsync()
+        {
+            var rechazados = await _approvalService.GetProposalsByStatusNameAsync("Rejected");
+
+            if (!rechazados.Any())
+            {
+                Console.WriteLine("No hay proyectos rechazados.");
+            }
+            else
+            {
+                Console.WriteLine("Proyectos rechazados:");
+                for (int i = 0; i < rechazados.Count; i++)
+                    Console.WriteLine($"{i + 1}. {rechazados[i].Title}");
+
+                Console.Write("Seleccione un proyecto para marcar como 'En revisión' (0 para cancelar): ");
+                if (int.TryParse(Console.ReadLine(), out int opcion) && opcion > 0 && opcion <= rechazados.Count)
+                {
+                    var proyecto = rechazados[opcion - 1];
+                    await _approvalService.MarkAsObservedAsync(proyecto.Id);
+                    Console.WriteLine("El proyecto fue marcado como 'En revisión' y ya puede ser evaluado nuevamente desde las solicitudes pendientes.");
+                }
+            }
+
+        }
+
+
     }
 }
