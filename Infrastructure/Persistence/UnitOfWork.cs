@@ -1,15 +1,16 @@
 ﻿using Application.Services;
-using Microsoft.EntityFrameworkCore;
+using Infrastructure.Data;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Threading.Tasks;
 
 namespace Infrastructure.Persistence
 {
     public class UnitOfWork : IUnitOfWork
     {
-        private readonly DbContext _context;
+        private readonly ProjectApprovalDbContext _context;
         private IDbContextTransaction? _currentTransaction;
 
-        public UnitOfWork(DbContext context)
+        public UnitOfWork(ProjectApprovalDbContext context)
         {
             _context = context;
         }

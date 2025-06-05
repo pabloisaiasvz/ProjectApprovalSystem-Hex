@@ -29,27 +29,37 @@ namespace Infrastructure.Queries
 
             var result = new List<ProjectProposalSummaryDto>();
 
+            var rejectedStatusId = await _context.ApprovalStatuses
+                .Where(a => a.Name == "Rejected")
+                .Select(a => a.Id)
+                .FirstOrDefaultAsync();
+
+            var approvedStatusId = await _context.ApprovalStatuses
+                .Where(a => a.Name == "Approved")
+                .Select(a => a.Id)
+                .FirstOrDefaultAsync();
+
+            var observedStatusId = await _context.ApprovalStatuses
+                .Where(a => a.Name == "Observed")
+                .Select(a => a.Id)
+                .FirstOrDefaultAsync();
+
             foreach (var project in projects)
             {
                 var steps = await _context.ProjectApprovalSteps
                     .Where(s => s.ProjectProposalId == project.Id)
                     .ToListAsync();
 
-                string status = "Pending";
-                var rejectedStatusId = await _context.ApprovalStatuses
-                    .Where(a => a.Name == "Rejected")
-                    .Select(a => a.Id)
-                    .FirstOrDefaultAsync();
-
-                var approvedStatusId = await _context.ApprovalStatuses
-                    .Where(a => a.Name == "Approved")
-                    .Select(a => a.Id)
-                    .FirstOrDefaultAsync();
+                string status;
 
                 if (steps.Any(s => s.Status == rejectedStatusId))
                     status = "Rejected";
+                else if (steps.Any(s => s.Status == observedStatusId))
+                    status = "Observed";
                 else if (steps.All(s => s.Status == approvedStatusId))
                     status = "Approved";
+                else
+                    status = "Pending";
 
                 var areaName = await _context.Areas
                     .Where(a => a.Id == project.Area)

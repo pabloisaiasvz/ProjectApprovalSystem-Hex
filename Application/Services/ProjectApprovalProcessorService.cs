@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Domain.Interfaces;
 using Domain.Entities;
-using Application.Exceptions;
 
 namespace Application.Services
 {
@@ -49,7 +48,7 @@ namespace Application.Services
                     .All(s => s.Status == statusApproved.Id);
 
                 if (!previousStepsApproved)
-                    throw new BusinessRuleException("No se puede aprobar este paso hasta que los pasos anteriores estén aprobados.");
+                    throw new Exception("No se puede aprobar este paso hasta que los pasos anteriores estén aprobados.");
 
                 currentStep.ApproverUserId = userId;
                 currentStep.Observations = observations;

@@ -1,11 +1,13 @@
 ﻿using Infrastructure.Data;
-using Presentation.ConsoleUI;
 using Infrastructure.Data.Repositories;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Application.Services;
 using Infrastructure.Persistence;
 using Infrastructure.Queries;
+using Application.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Presentation.ConsoleUI;
+using Domain.Interfaces;
 
 namespace Presentation
 {
@@ -24,44 +26,36 @@ namespace Presentation
 
             var connectionString = config.GetConnectionString("DefaultConnection");
 
-            var optionsBuilder = new DbContextOptionsBuilder<ProjectApprovalDbContext>();
-            optionsBuilder.UseSqlServer(connectionString);
+            var services = new ServiceCollection();
+
+            services.AddDbContext<ProjectApprovalDbContext>(options =>
+                options.UseSqlServer(connectionString));
+
+            services.AddScoped<IUserQueries, UserQueries>();
+            services.AddScoped<IProjectProposalQueries, ProjectProposalQueries>();
+            services.AddScoped<IPendingApprovalQueries, PendingApprovalQueries>();
+            services.AddScoped<ICatalogQueries, CatalogQueries>();
+
+            services.AddScoped<IProjectProposalRepository, ProjectProposalRepository>();
+            services.AddScoped<IApprovalStatusRepository, ApprovalStatusRepository>();
+            services.AddScoped<IApprovalRuleRepository, ApprovalRuleRepository>();
+            services.AddScoped<IProjectApprovalStepRepository, ProjectApprovalStepRepository>();
+            services.AddScoped<IApproverRoleRepository, ApproverRoleRepository>();
+
+            services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+            services.AddScoped<IProjectCreateService, ProjectCreateService>();
+            services.AddScoped<IProjectApprovalProcessorService, ProjectApprovalProcessorService>();
+
+            services.AddScoped<ProjectApprovalManager>();
+
+            var serviceProvider = services.BuildServiceProvider();
 
             try
             {
-                using (var context = new ProjectApprovalDbContext(optionsBuilder.Options))
+                using (var scope = serviceProvider.CreateScope())
                 {
-                    context.Database.EnsureCreated();
-
-                    var userQueries = new UserQueries(context);
-                    var projectProposalQueries = new ProjectProposalQueries(context);
-                    var pendingApprovalQueries = new PendingApprovalQueries(context);
-                    var catalogQueries = new CatalogQueries(context);
-
-                    var proposalRepo = new ProjectProposalRepository(context);
-                    var statusRepo = new ApprovalStatusRepository(context);
-                    var ruleRepo = new ApprovalRuleRepository(context);
-                    var stepRepo = new ProjectApprovalStepRepository(context);
-                    var roleRepo = new ApproverRoleRepository(context);
-                    var unitOfWork = new UnitOfWork(context);
-
-                    var createService = new ProjectCreateService(
-                        proposalRepo, statusRepo, ruleRepo, stepRepo, roleRepo, unitOfWork);
-
-                    var approvalService = new ProjectApprovalProcessorService(
-                        proposalRepo, statusRepo, stepRepo, unitOfWork);
-
-
-
-                    var manager = new ProjectApprovalManager(
-                        userQueries,
-                        projectProposalQueries,
-                        pendingApprovalQueries,
-                        catalogQueries,
-                        createService,
-                        approvalService
-                    );
-
+                    var manager = scope.ServiceProvider.GetRequiredService<ProjectApprovalManager>();
                     await manager.RunAsync();
                 }
             }

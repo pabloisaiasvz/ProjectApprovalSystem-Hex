@@ -83,7 +83,7 @@ namespace Application.Services
                         ApproverRoleId = rule.ApproverRoleId,
                         Status = pendingStatus.Id,
                         ApprovalStatus = pendingStatus,
-                        StepOrder = i + 1,
+                        StepOrder = rule.StepOrder,
                         ApproverRole = approverRole
                     };
                     await _stepRepo.AddAsync(step);

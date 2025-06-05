@@ -14,8 +14,8 @@ namespace Presentation.ConsoleUI
         private readonly IProjectProposalQueries _projectQueries;
         private readonly IPendingApprovalQueries _pendingApprovalQueries;
         private readonly ICatalogQueries _catalogQueries;
-        private readonly ProjectCreateService _createService;
-        private readonly ProjectApprovalProcessorService _approvalService;
+        private readonly IProjectCreateService _createService;
+        private readonly IProjectApprovalProcessorService _approvalService;
 
         private UserDto _currentUser;
 
@@ -24,8 +24,8 @@ namespace Presentation.ConsoleUI
             IProjectProposalQueries projectQueries,
             IPendingApprovalQueries pendingApprovalQueries,
             ICatalogQueries catalogQueries,
-            ProjectCreateService createService,
-            ProjectApprovalProcessorService approvalService)
+            IProjectCreateService createService,
+            IProjectApprovalProcessorService approvalService)
         {
             _userQueries = userQueries;
             _projectQueries = projectQueries;
