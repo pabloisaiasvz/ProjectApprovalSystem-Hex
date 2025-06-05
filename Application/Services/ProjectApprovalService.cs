@@ -3,9 +3,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Domain.Interfaces;
 using Domain.Entities;
-using System.Collections.Generic;
-using Application.Services;
-using Domain.Interfaces;
 
 namespace Application.Services
 {
@@ -64,7 +61,9 @@ namespace Application.Services
                 };
 
                 await _proposalRepo.AddAsync(projectProposal);
-                var rules = (await _ruleRepo.GetRulesAsync(estimatedAmount, areaId, projectTypeId)).ToList();
+
+                var allRules = (await _ruleRepo.GetRulesAsync(estimatedAmount, areaId, projectTypeId)).ToList();
+                var rules = GetMostSpecificRules(allRules);
 
                 if (!rules.Any())
                 {
@@ -72,8 +71,10 @@ namespace Application.Services
                     return null;
                 }
 
-                foreach (var rule in rules)
+                var orderedRules = rules.OrderBy(r => r.StepOrder).ToList();
+                for (int i = 0; i < orderedRules.Count; i++)
                 {
+                    var rule = orderedRules[i];
                     var approverRole = await _roleRepo.GetByIdAsync(rule.ApproverRoleId);
                     var step = new ProjectApprovalStep
                     {
@@ -81,14 +82,13 @@ namespace Application.Services
                         ApproverRoleId = rule.ApproverRoleId,
                         Status = pendingStatus.Id,
                         ApprovalStatus = pendingStatus,
-                        StepOrder = rule.StepOrder,
+                        StepOrder = i + 1,
                         ApproverRole = approverRole
                     };
                     await _stepRepo.AddAsync(step);
                 }
 
                 await _unitOfWork.CommitAsync();
-
                 return projectProposal.Id;
             }
             catch
@@ -113,6 +113,14 @@ namespace Application.Services
                 var statusRejected = await _statusRepo.GetByNameAsync("Rejected");
                 if (statusApproved == null || statusRejected == null) throw new Exception("Estados 'Approved' o 'Rejected' no encontrados.");
 
+                var allSteps = (await _stepRepo.GetByProposalIdAsync(projectId)).ToList();
+                bool previousStepsApproved = allSteps
+                    .Where(s => s.StepOrder < stepOrder)
+                    .All(s => s.Status == statusApproved.Id);
+
+                if (!previousStepsApproved)
+                    throw new Exception("No se puede aprobar este paso hasta que los pasos anteriores estén aprobados.");
+
                 currentStep.ApproverUserId = userId;
                 currentStep.Observations = observations;
                 currentStep.DecisionDate = DateTime.Now;
@@ -128,8 +136,7 @@ namespace Application.Services
                     return;
                 }
 
-                var allSteps = await _stepRepo.GetByProposalIdAsync(projectId);
-                bool allApproved = allSteps.All(s => s.Status == statusApproved.Id);
+                bool allApproved = allSteps.All(s => s.StepOrder <= stepOrder ? s.Status == statusApproved.Id : true);
 
                 if (allApproved)
                 {
@@ -159,5 +166,21 @@ namespace Application.Services
 
             await _proposalRepo.UpdateAsync(projectProposal);
         }
+
+
+        private static List<ApprovalRule> GetMostSpecificRules(List<ApprovalRule> rules)
+        {
+            return rules
+                .GroupBy(r => r.StepOrder)
+                .Select(g =>
+                    g.OrderByDescending(r =>
+                        (r.Area.HasValue ? 1 : 0) +
+                        (r.Type.HasValue ? 1 : 0) +
+                        (r.MinAmount > 0 ? 1 : 0) +
+                        (r.MaxAmount > 0 ? 1 : 0)
+                    ).First()
+                ).ToList();
+        }
+
     }
 }

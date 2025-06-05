@@ -215,7 +215,7 @@ namespace Presentation.ConsoleUI
             }
             else
             {
-                Console.WriteLine("Entrada no válida.");
+                Console.WriteLine("Opción no válida.");
             }
         }
 
